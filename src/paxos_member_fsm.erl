@@ -185,8 +185,7 @@ waiting({commit, LeaderPID, EpochId, NewInnerState},
     send(LeaderPID, { accept, EpochId }),
     NewState = maps:put(inner_state,NewInnerState,State),
     log(GroupId,"~p:waiting (pid:~p) got commit leader:~p epoch:~p new-inner-state:~p~n",[?MODULE,self(),LeaderPID,EpochId,NewInnerState]),
-    {next_state, ready, NewState, %%State#{ inner_state := NewInnerState },
-     ?HEARTBEAT_TIMEOUT};
+    {next_state, ready, NewState, ?HEARTBEAT_TIMEOUT};
 
 waiting(_Other, State) ->
     %% we may receive late messages meant for other states; ignore

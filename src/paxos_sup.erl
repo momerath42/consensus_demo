@@ -11,7 +11,6 @@
 
 
 start_link(GroupId) ->
-    io:format("start_link(~p)~n",[GroupId]),
     supervisor:start_link({local, ?MODULE}, ?MODULE, [GroupId]).
 
 init([GroupId]) ->

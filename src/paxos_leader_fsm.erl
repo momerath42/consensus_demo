@@ -11,6 +11,8 @@
 
 -import(paxos_utils,[log/3, warn/3, err/3, debug/3]).
 
+-compile(export_all).
+
 %% -------------------------------------------
 %% External Interface:
 %% -------------------------------------------
@@ -27,19 +29,6 @@ get_fast(GroupId) ->
 
 get_consistent(GroupId) ->
     sync_request(GroupId,get_consistent).
-
-%%     Ref = make_ref(),
-%%     gen_fsm:send_event(global:whereis_name(GroupId),
-%%                        {request, self(), Ref, get_fast}),
-%%     receive
-%%         { get_fast_reply, Ref, InnerState } ->
-%%             {ok, InnerState}
-%%     after ?GET_FAST_TIMEOUT ->
-%%             {timeout, no_reply}
-%%     end.
-
-%% get_consistent(GroupId) ->
-%%     todo.
 
 simulate_split_members(GroupId,NewGroupId,N) ->
     Key = {paxos_member_fsm, GroupId},
@@ -174,7 +163,7 @@ campaigning(_Other, State = #{group_id := GroupId}) ->
 
 
 serving(timeout, State = #{group_id := GroupId, current_epoch := EpochId}) ->
-    debug(GroupId,"~p:serving (pid:~p) group:~p epoch:~p sending heartbeat~n",
+    log(GroupId,"~p:serving (pid:~p) group:~p epoch:~p sending heartbeat~n",
               [?MODULE,self(),GroupId,EpochId]),
     send_to_members(GroupId, { heartbeat, self(), EpochId }),
     {next_state, serving, State, ?HEARTBEAT_PERIOD};
@@ -195,15 +184,6 @@ serving({request, RequesterPID, Ref, Operation},
                                              {requester, RequesterPID},
                                              {request_ref, Ref}],State),
     {next_state, preparing, NewState, ?PREPARING_TIMEOUT};
-
-    %% oh for the announced syntax :(
-    %% {next_state, preparing, State#{ new_epoch := NewEpochId,
-    %%                                 new_inner_state := NewInnerState,
-    %%                                 promises := [],
-    %%                                 promise_count := 0,
-    %%                                 requester := RequesterPID,
-    %%                                 request_ref := Ref },
-    %% ?PREPARING_TIMEOUT};
 
 serving(_Other, State) ->
     %% unnecessary (> quorum-count) messages from other states will come in; ignore them
@@ -229,9 +209,10 @@ preparing({promise, EpochId, InnerState},
                    })
   when (NPromises + 1) >= ?QUORUM_COUNT ->
     StateWithLatestPromise = maps:put(promises,[InnerState|Promises],State),
+    log(GroupId,"~p:preparing got quorum of promises for group:~p in epoch:~p state:~p~n",
+        [?MODULE,GroupId,EpochId,StateWithLatestPromise]),
     NewState = perform_operation(Operation,StateWithLatestPromise),
     {next_state, committing, NewState,
-%%CleanState#{new_inner_state := NewInnerState, acceptance_count := 0},
      ?COMMITTING_TIMEOUT};
 
 preparing({promise, EpochId, InnerState},
@@ -266,7 +247,6 @@ committing({accept, EpochId},
     RequesterPID ! { req_reply, Ref, OpResult },
     log(GroupId,"~p:committing (pid:~p) got accept with epoch:~p - acount+1 is a quorum:~p (updating epoch from:~p)~n",[?MODULE,self(),EpochId,?QUORUM_COUNT,CurrentEpochId]),
     {next_state, serving, CleanState,
-%%     CleanState#{inner_state := NewInnerState, current_epoch := EpochId },
      ?HEARTBEAT_PERIOD};
 
 committing({accept, EpochId},
@@ -274,7 +254,6 @@ committing({accept, EpochId},
                      new_epoch := EpochId }) ->
     NewState = maps:put(acceptance_count,ACount+1,State),
     {next_state, committing, NewState,
-%%     State#{ acceptance_count := ACount + 1 },
      ?COMMITTING_TIMEOUT};
 
 committing(_Other, State) ->
@@ -358,7 +337,7 @@ perform_operation(get_consistent, State = #{promises := Promises, inner_state :=
                             {ok,S};
                        (OS,{_,R}) ->
                             {err,[OS|R]}
-                    end,[LeadersInnerState],Promises),
+                    end,{ok,[LeadersInnerState]},Promises),
     maps:put(get_consistent_result,R,State).
 
 finalize_operation({set, _}, State = #{new_inner_state := NewInnerState, new_epoch := EpochId}) ->

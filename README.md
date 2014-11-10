@@ -9,7 +9,7 @@ Status:
 
 I started with what I thought would be the simplest option that I could expand on in interesting ways, but I underestimated the task a bit, and have had multiple distractions this weekend.  What exists now, and I believe works properly (supplying the guarantees it should, for the most part), is a partially role-consolidated version of paxos with no partial-state-transformation (set is all or nothing).  Something I believe is lacking, but I haven't had time to test, re-research, and accomodate, is updating rejoined nodes with the consentual state, though they'll get it on the next set.  I also have a feeling the processes of agreeing on an update, and election, could be elegantly refactored into one thing, but again, time (and inexperience with this problem domain).
 
-I wanted to have a nice little web gui for watching the activities of the nodes, and causing simulated misbehavior (netsplits and crashes).  A chunked-encoding issue has me stalled out on that front; currently the only way to watch the activity is to call 'paxos_utils:log_to_disk(GroupId,"filename").' at the erlang console, where GroupId would be 1 to watch the default group.
+I wanted to have a nice little web gui for watching the activities of the nodes, and causing simulated misbehavior (netsplits and crashes).  A chunked-encoding issue has me stalled out on that front; currently the only way to watch the activity is to tail group1.log (and to call 'paxos_utils:log_to_disk(GroupId,"filename").' at the erlang console, where GroupId is any other groups you split nodes into, and watch that log).
 
 
 Client interface:
@@ -40,5 +40,5 @@ To Run:
 2. from this cloned repo's directory:
 3. ./rebar get-deps
 4. ./rebar compile
-5. ./devel-console.sh
-6. at the console: 'paxos_utils:log_to_disk(1,"group1.log).'
+5. ./start.sh
+
