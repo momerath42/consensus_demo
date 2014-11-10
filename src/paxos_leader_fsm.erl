@@ -170,7 +170,7 @@ serving(timeout, State = #{group_id := GroupId, current_epoch := EpochId}) ->
 
 serving({request, RequesterPID, Ref, get_fast},
         State = #{inner_state := InnerState}) ->
-    RequesterPID ! { get_fast_reply, Ref, InnerState },
+    RequesterPID ! { req_reply, Ref, {ok, InnerState} },
     {next_state, serving, State, ?HEARTBEAT_PERIOD};
 
 serving({request, RequesterPID, Ref, Operation},
@@ -192,7 +192,7 @@ serving(_Other, State) ->
 
 preparing(timeout,State = #{requester := RequesterPID,
                             request_ref := Ref}) ->
-    RequesterPID ! { set_reply, Ref, preparing, timeout },
+    RequesterPID ! { req_reply, Ref, {timeout, preparing} },
     resign(State);
 
 %% A more flexible version of this state might accept promises with an
@@ -230,7 +230,7 @@ preparing(_Other, State) ->
 
 committing(timeout, State = #{requester := RequesterPID,
                             request_ref := Ref}) ->
-    RequesterPID ! { set_reply, Ref, committing, timeout },
+    RequesterPID ! { req_reply, Ref, {timeout, committing} },
     resign(State);
 
 committing({accept, EpochId},
@@ -245,7 +245,7 @@ committing({accept, EpochId},
     {OpResult,NewState} = finalize_operation(Operation,State),
     CleanState = maps:without([new_inner_state,new_epoch],NewState),
     RequesterPID ! { req_reply, Ref, OpResult },
-    log(GroupId,"~p:committing (pid:~p) got accept with epoch:~p - acount+1 is a quorum:~p (updating epoch from:~p)~n",[?MODULE,self(),EpochId,?QUORUM_COUNT,CurrentEpochId]),
+    log(GroupId,"~p:committing (pid:~p) got accept with epoch:~p - acount+1 is a quorum:~p (updating epoch from:~p) sent op-result:~p to:~p~n",[?MODULE,self(),EpochId,?QUORUM_COUNT,CurrentEpochId,OpResult,RequesterPID]),
     {next_state, serving, CleanState,
      ?HEARTBEAT_PERIOD};
 
@@ -332,13 +332,29 @@ perform_operation({set, LeadersNewInternalState},
     paxos_utils:maps_put_several([{new_inner_state, NewInnerState},
                                   {acceptance_count, 0}],CleanState);
 
-perform_operation(get_consistent, State = #{promises := Promises, inner_state := LeadersInnerState}) ->
+perform_operation(get_consistent,
+                  State = #{promises := Promises,
+                            inner_state := LeadersInnerState,
+                            new_epoch := EpochId,
+                            group_id := GroupId}) ->
     R = lists:foldl(fun(S,{ok,[S]}) ->
-                            {ok,S};
+                            {ok,[S]};
                        (OS,{_,R}) ->
                             {err,[OS|R]}
                     end,{ok,[LeadersInnerState]},Promises),
-    maps:put(get_consistent_result,R,State).
+    %% unnecessary consequence of the way I was trying to generalize
+    %% operations, or lucky coincidence if the goal is to resync lagging
+    %% nodes' state
+    case R of
+        {ok,[S]} ->
+            send_to_members(GroupId, { commit, self(), EpochId, S }),
+            maps:put(get_consistent_result,{ok,S},State);
+        {err,StateList} ->
+            warn(GroupId,"~p:perform_operation(get_consistent group:~p epoch:~p inconsistent states:~p~n",
+                 [?MODULE,GroupId,EpochId,StateList]),
+            send_to_members(GroupId, { commit, self(), EpochId, LeadersInnerState }), %% sound?
+            maps:put(get_consistent_result,R,State)
+    end.
 
 finalize_operation({set, _}, State = #{new_inner_state := NewInnerState, new_epoch := EpochId}) ->
     NewState = paxos_utils:maps_put_several([{inner_state,NewInnerState},
