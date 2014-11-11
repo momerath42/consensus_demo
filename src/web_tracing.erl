@@ -38,10 +38,13 @@ send_streamed_log() ->
             {"",done}
     end.
 
+start_streaming_log() ->
+    {"\r\ntest\r\n", fun send_streamed_log/0}.
+
 to_html(ReqData,State) ->
     io:format("web_tracing:to_html~n"),
 %    PIDStr = wrq:path_info(process, ReqData),
     GroupId = list_to_integer(wrq:path_info(group,ReqData)),
     paxos_utils:subscribe_to_log(GroupId),
     NewReqData = wrq:set_resp_header("Content-Length", "", ReqData),
-    {{halt,200}, wrq:set_resp_body({stream,fun send_streamed_log/0},NewReqData), State}.
+    {{halt,200}, wrq:set_resp_body({stream,fun start_streaming_log/0},NewReqData), State}.

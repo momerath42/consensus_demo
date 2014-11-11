@@ -207,7 +207,7 @@ preparing({promise, EpochId, InnerState},
                      promise_count := NPromises,
                      pending_operation := Operation
                    })
-  when (NPromises + 1) >= ?QUORUM_COUNT ->
+  when (NPromises + 2) >= ?QUORUM_COUNT -> %% the recorded promises, the incoming promise, and self as quorum member
     StateWithLatestPromise = maps:put(promises,[InnerState|Promises],State),
     log(GroupId,"~p:preparing got quorum of promises for group:~p in epoch:~p state:~p~n",
         [?MODULE,GroupId,EpochId,StateWithLatestPromise]),
@@ -217,14 +217,18 @@ preparing({promise, EpochId, InnerState},
 
 preparing({promise, EpochId, InnerState},
           State = #{ new_epoch := EpochId,
+                     group_id := GroupId,
                      promises := Promises,
                      promise_count := NPromises }) ->
     NewState = paxos_utils:maps_put_several([{promises, [InnerState | Promises ]},
                                              {promise_count, NPromises + 1 }],State),
+    log(GroupId,"~p:preparing got promise for group:~p in epoch:~p new-state:~p~n",
+        [?MODULE,GroupId,EpochId,NewState]),
     {next_state, preparing, NewState, ?PREPARING_TIMEOUT};
 
-preparing(_Other, State) ->
+preparing(_Other, State = #{group_id := GroupId}) ->
     %% unnecessary (> quorum-count) messages from other states will come in; ignore them
+    log(GroupId,"~p:preparing got extraneous message:~p state:~p~n",[?MODULE,_Other,State]),
     {next_state, preparing, State, ?PREPARING_TIMEOUT}.
 
 
@@ -241,7 +245,7 @@ committing({accept, EpochId},
                       request_ref := Ref,
                       pending_operation := Operation,
                       group_id := GroupId})
-  when (ACount + 1) >= ?QUORUM_COUNT ->
+  when (ACount + 2) >= ?QUORUM_COUNT -> %% recorded + incoming + self
     {OpResult,NewState} = finalize_operation(Operation,State),
     CleanState = maps:without([new_inner_state,new_epoch],NewState),
     RequesterPID ! { req_reply, Ref, OpResult },
