@@ -291,9 +291,10 @@ send_to_members(GroupId, Msg) ->
     Key = {paxos_member_fsm, GroupId},
     %% In terms of simulation, you can think of this as the available
     %% sockets (assuming a tcp connection; for udp, we'd need heartbeat
-    %% replies (at least).  A 'netsplit' results in the members being
+    %% replies (at least)).  A 'netsplit' results in the members being
     %% registered with a different group, and these 'sockets' being
-    %% closed.
+    %% closed.  gproc and fuzzable_send could rather easily be replaced
+    %% with 'real' networking.
     Members = gproc:lookup_pids({p, l, Key}),
     debug(GroupId,"send_to_members(~p,~p) key:~p members:~p~n",[GroupId,Msg,Key,Members]),
     if (length(Members) + 1) >= ?QUORUM_COUNT ->
@@ -343,9 +344,9 @@ perform_operation(get_consistent,
                        (OS,{_,R}) ->
                             {err,[OS|R]}
                     end,{ok,[LeadersInnerState]},Promises),
-    %% unnecessary consequence of the way I was trying to generalize
-    %% operations, or lucky coincidence if the goal is to resync lagging
-    %% nodes' state
+    %% I wasn't planning on making consistent gets follow through with a
+    %% commit, but it has a nice side-effect, and maybe it's the right
+    %% thing to do.
     case R of
         {ok,[S]} ->
             send_to_members(GroupId, { commit, self(), EpochId, S }),

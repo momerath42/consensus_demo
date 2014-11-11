@@ -83,16 +83,16 @@ voting({autonomination, LeaderPID, EpochId} = Event,
                  group_id := GroupId})
   when CurrentEpochId < EpochId ->
     send(LeaderPID,{vote, EpochId, self()}),
-    %% wish they'd add the update syntax
-    NewState = maps:put(voting_epoch, EpochId, State),
-    NewState2 = maps:put(leader_voted_for, LeaderPID, NewState),
-    debug(GroupId,"~p:voting(~p,~p) next-state:ready new-state:~p~n",[?MODULE,Event,State,NewState2]),
-    {next_state, awaiting_election, NewState2,
+    NewState = paxos_utils:maps_put_several([{voting_epoch,EpochId},
+                                             {leader_voted_for,LeaderPID}],
+                                            State),
+    debug(GroupId,"~p:voting(~p,~p) next-state:ready new-state:~p~n",[?MODULE,Event,State,NewState]),
+    {next_state, awaiting_election, NewState,
      ?AWAITING_ELECTION_TIMEOUT};
 
 voting({autonomination, _LeaderPID, EpochId},
        #{current_epoch := EpochId} = State) ->
-    %% Epoch isn't higher than current! just ignore?
+    %% Epoch isn't higher than current! just ignore
     {next_state, voting, State, paxos_utils:rand_election_timeout()};
 
 voting({heartbeat, _LeaderId, _EpochId},State) ->
@@ -134,7 +134,7 @@ awaiting_election(_Other,State) ->
 
 
 ready(timeout, State) ->
-    %%run_for_election(State);
+    %%run_for_election(State); %% jumping straight to voting causes more contention (in my limited testing)
     {next_state, voting, State, paxos_utils:rand_election_timeout()};
 
 ready({heartbeat, LeaderPID, EpochId},
@@ -153,10 +153,9 @@ ready({prepare, LeaderPID, NewEpoch},
     log(GroupId,"~p:ready (pid:~p) got prepare leader:~p new-epoch:~p~n",[?MODULE,self(),LeaderPID,NewEpoch]),
     send(LeaderPID, { promise, NewEpoch, InnerState }),
     NewState = maps:put(current_epoch,NewEpoch,State),
-    {next_state, waiting, NewState, %%State#{ current_epoch := NewEpoch },
-     ?COMMITTING_TIMEOUT};
+    {next_state, waiting, NewState, ?COMMITTING_TIMEOUT};
 
-%% kludge?
+%% kludge or optimization against long 'relaxation' times in elections?
 ready({autonomination, CandidatePID, VotingEpochId},
       State = #{current_epoch := EpochId,
                 leader := LeaderPID,
@@ -176,7 +175,7 @@ ready(_Other, State = #{group_id := GroupId}) ->
 
 waiting(timeout, State) ->
     {next_state, voting, State, paxos_utils:rand_election_timeout() };
-%    run_for_election(State);
+%    run_for_election(State); %% see ready(timeout...
 
 waiting({commit, LeaderPID, EpochId, NewInnerState},
         State = #{ current_epoch := EpochId,
