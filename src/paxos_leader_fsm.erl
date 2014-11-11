@@ -100,7 +100,6 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 run_for_election(timeout,State = #{group_id := GroupId, current_epoch := EpochId}) ->
     log(GroupId,"~p:run_for_election (pid:~p) group:~p epoch:~p sending autonominations for voting-epoch:~p~n",
               [?MODULE,self(),GroupId,EpochId,EpochId+1]),
-    %% TODO: if there aren't enough members for a quorum, resign!
     send_to_members(GroupId, {autonomination, self(), EpochId + 1}),
     NewState = paxos_utils:maps_put_several([{n_votes,1}, %% vote for self
                                              {n_votes_against,0},
@@ -302,8 +301,6 @@ send_to_members(GroupId, Msg) ->
             EventMsg = {event, Msg},
             paxos_utils:fuzzable_send(To,EventMsg,fun gproc:send/2);
        true ->
-            %% will be restarted as a member (unfortunately for the
-            %% simulation, in the default group)
             exit(leader_of_a_non_quorum)
     end.
 
